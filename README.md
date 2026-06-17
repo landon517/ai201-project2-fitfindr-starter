@@ -136,7 +136,7 @@ Each tool's output is stored in the session before the next tool is called, so e
 ## Error Handling
  
 | Tool | Failure mode | Agent response |
-|---|---|---|
+
 | `search_listings` | No listings match the query | Sets `session["error"]`: "No listings matched '[query]' in size [X] under $[Y]. Try broadening your size range, raising your budget, or using different keywords like 'band tee', 'graphic shirt', or 'flannel'." Returns early — does not call the other tools. |
 | `suggest_outfit` | Wardrobe is empty | Still calls the LLM with a general styling prompt. Returns non-empty styling advice rather than crashing or returning an empty string. |
 | `create_fit_card` | `outfit` is empty or whitespace | Returns the string: "Error: outfit suggestion is missing — run suggest_outfit first before generating a fit card." Does not raise an exception. |
@@ -171,8 +171,8 @@ The planning.md spec held up well through implementation with two adjustments:
 ## AI Tool Usage
  
 **Instance 1 — implementing `search_listings`:**
-I gave Claude the Tool 1 block from `planning.md` (the inputs table, return value description, and empty-result failure mode) along with the `load_listings()` function signature from `data_loader.py`. I asked it to implement the function using those helpers. The generated code used `in` substring matching for size and scored by keyword count across title, description, and style tags — matching the spec. I verified that (1) all three filter parameters were applied, (2) the empty-result case returned `[]` not `None`, and (3) results were sorted by score. I added the cap of 5 results, which the generated code omitted.
+I gave Claude the Tool 1 block from `planning.md` (the inputs table, return value description, and empty-result failure mode) along with the `load_listings()` function signature from `data_loader.py`. I asked it to implement the function using those helpers. The generated code used `in` substring matching for size and scored by keyword count across title, description, and style tags — matching the spec. I verified that, firstly all three filter parameters were applied, then the empty-result case returned `[]` not `None`, and lastly results were sorted by score. I added the cap of 5 results, which the generated code omitted.
  
 **Instance 2 — implementing the planning loop:**
-I gave Claude the Planning Loop section and the Mermaid architecture diagram from `planning.md` and asked it to implement `run_agent()`. The generated code correctly branched on empty search results and stored values in the session dict at each step. I changed one thing: the generated code called `suggest_outfit` with a hardcoded empty wardrobe check inside `run_agent()` and passed a modified wardrobe in — I moved that logic back into `suggest_outfit` itself, where the spec said it belonged, so the tool handles its own failure mode rather than the planning loop working around it.
+I gave Claude the Planning Loop section and the architecture and asked it to implement `run_agent()`. The generated code correctly branched on empty search results and stored values in the session dict. I changed the generated code called `suggest_outfit` with a hardcoded empty wardrobe check inside `run_agent()` and passed a modified wardrobe in. I moved that logic back into `suggest_outfit` itself, where the spec said it belonged, so the tool handles its own failure mode rather than the planning loop working around it.
 
