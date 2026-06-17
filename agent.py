@@ -17,6 +17,7 @@ Usage (once implemented):
     print(result["fit_card"])
     print(result["error"])   # None on success
 """
+import re
 
 from tools import search_listings, suggest_outfit, create_fit_card
 
@@ -44,7 +45,49 @@ def _new_session(query: str, wardrobe: dict) -> dict:
         "error": None,               # set if the interaction ended early
     }
 
-
+def _parse_query(query: str) -> dict:
+    """
+    Extract description, size, and max_price from a natural language query
+    using regex. Anything left after stripping size/price phrases becomes
+    the description keyword string.
+ 
+    Examples:
+        "vintage graphic tee under $30, size M"
+            → {"description": "vintage graphic tee", "size": "M", "max_price": 30.0}
+        "90s track jacket"
+            → {"description": "90s track jacket", "size": None, "max_price": None}
+    """
+    text = query.strip()
+ 
+    # Extract max_price — matches "under $30", "under 30", "$30", "< $30"
+    max_price = None
+    price_match = re.search(r"(?:under|beneath|below|<|max)?\s*\$?(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    if price_match:
+        max_price = float(price_match.group(1))
+        text = text[:price_match.start()] + text[price_match.end():]
+ 
+    # Extract size — matches "size M", "size XL", "in M", "in a M"
+    size = None
+    size_match = re.search(
+        r"\b(?:size\s+|in\s+(?:a\s+)?)?([SML]|XS|XL|XXL|XXS|W\d{2}(?:\s*L\d{2})?|US\s*\d+(?:\.\d+)?|One\s+Size)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if size_match:
+        size = size_match.group(1).strip()
+        text = text[:size_match.start()] + text[size_match.end():]
+ 
+    # Clean up leftover punctuation/filler words from the description
+    description = re.sub(r"\b(in|a|an|for|the|some|,)\b", " ", text, flags=re.IGNORECASE)
+    description = re.sub(r"\s+", " ", description).strip(" ,")
+ 
+    return {
+        "description": description or query,
+        "size": size,
+        "max_price": max_price,
+    }
+ 
+ 
 # ── planning loop ─────────────────────────────────────────────────────────────
 
 def run_agent(query: str, wardrobe: dict) -> dict:
@@ -93,9 +136,43 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     of planning.md — your implementation should match what you described there.
     """
     # TODO: implement the planning loop
+        # Step 1: Initialize session
     session = _new_session(query, wardrobe)
-    session["error"] = "Planning loop not yet implemented."
+ 
+    parsed = _parse_query(query)
+    session["parsed"] = parsed
+ 
+    results = search_listings(
+        description=parsed["description"],
+        size=parsed["size"],
+        max_price=parsed["max_price"],
+    )
+    session["search_results"] = results
+ 
+    if not results:
+        price_hint = f" under ${int(parsed['max_price'])}" if parsed["max_price"] else ""
+        size_hint = f" in size {parsed['size']}" if parsed["size"] else ""
+        session["error"] = (
+            f"No listings matched \"{parsed['description']}\"{size_hint}{price_hint}. "
+            f"Try broadening your size range, raising your budget, or using different "
+            f"keywords like 'band tee', 'graphic shirt', or 'flannel'."
+        )
+        return session
+ 
+    session["selected_item"] = results[0]
+ 
+    session["outfit_suggestion"] = suggest_outfit(
+        new_item=session["selected_item"],
+        wardrobe=wardrobe,
+    )
+ 
+    session["fit_card"] = create_fit_card(
+        outfit=session["outfit_suggestion"],
+        new_item=session["selected_item"],
+    )
+ 
     return session
+
 
 
 # ── CLI test ──────────────────────────────────────────────────────────────────

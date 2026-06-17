@@ -11,7 +11,7 @@ Tools:
     suggest_outfit(new_item, wardrobe)              → str
     create_fit_card(outfit, new_item)               → str
 """
-
+from __future__ import annotations
 import os
 
 from dotenv import load_dotenv
@@ -70,14 +70,38 @@ def search_listings(
     Before writing code, fill in the Tool 1 section of planning.md.
     """
     # Replace this with your implementation
-    return []
+    listings = load_listings()
+ 
+    if max_price is not None:
+        listings = [l for l in listings if l["price"] <= max_price]
+ 
+    if size is not None:
+        size_lower = size.lower()
+        listings = [l for l in listings if size_lower in l["size"].lower()]
+ 
+    keywords = description.lower().split()
+ 
+    def score(listing: dict) -> int:
+        searchable = " ".join([
+            listing["title"].lower(),
+            listing["description"].lower(),
+            " ".join(listing["style_tags"]).lower(),
+        ])
+        return sum(1 for kw in keywords if kw in searchable)
+ 
+    scored = [(listing, score(listing)) for listing in listings]
+ 
+    scored = [(listing, s) for listing, s in scored if s > 0]
+ 
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [listing for listing, _ in scored[:5]]
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
 
 def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
     """
-    Given a thrifted item and the user's wardrobe, suggest 1–2 complete outfits.
+    Given a thrifted item and the user's wardrobe, suggest 1-2 complete outfits.
 
     Args:
         new_item: A listing dict (the item the user is considering buying).
@@ -100,8 +124,51 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
 
     Before writing code, fill in the Tool 2 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    client = _get_groq_client()
+ 
+    item_summary = (
+        f"Item: {new_item.get('title', 'unknown')}\n"
+        f"Colors: {', '.join(new_item.get('colors', []))}\n"
+        f"Style: {', '.join(new_item.get('style_tags', []))}\n"
+        f"Category: {new_item.get('category', 'unknown')}\n"
+        f"Condition: {new_item.get('condition', 'unknown')}"
+    )
+ 
+    if not wardrobe.get("items"):
+        prompt = (
+            "You are a thrift fashion stylist.\n\n"
+            "A user just found this secondhand item:\n"
+            f"{item_summary}\n\n"
+            "They haven't set up their wardrobe yet. Give them 2-3 sentences of "
+            "general styling advice: what types of pieces pair well with this item, "
+            "what aesthetic or vibe it suits, and one specific styling tip. "
+            "Keep it casual and specific."
+        )
+    else:
+        wardrobe_lines = "\n".join(
+            f"- {item['name']} (colors: {', '.join(item['colors'])}, "
+            f"tags: {', '.join(item['style_tags'])})"
+            + (f" — {item['notes']}" if item.get("notes") else "")
+            for item in wardrobe["items"]
+        )
+        prompt = (
+            "You are a thrift fashion stylist.\n\n"
+            "A user just found this secondhand item:\n"
+            f"{item_summary}\n\n"
+            "Their current wardrobe:\n"
+            f"{wardrobe_lines}\n\n"
+            "Suggest 1-2 specific outfits that incorporate the new item with pieces "
+            "from their wardrobe. Name each wardrobe piece by name. Be concise — "
+            "2-4 sentences per outfit. Keep the tone casual."
+        )
+ 
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=300,
+    )
+    return response.choices[0].message.content.strip()
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
@@ -115,7 +182,7 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         new_item: The listing dict for the thrifted item.
 
     Returns:
-        A 2–4 sentence string usable as an Instagram/TikTok caption.
+        A 2-4 sentence string usable as an Instagram/TikTok caption.
         If outfit is empty or missing, return a descriptive error message
         string — do NOT raise an exception.
 
@@ -133,5 +200,33 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
 
     Before writing code, fill in the Tool 3 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    if not outfit or not outfit.strip():
+        return "Error: outfit suggestion is missing — run suggest_outfit first before generating a fit card."
+ 
+    title = new_item.get("title", "thrifted find")
+    price = new_item.get("price", "?")
+    platform = new_item.get("platform", "a thrift app")
+ 
+    prompt = (
+        "You are writing a casual Instagram or TikTok caption for a thrift OOTD post.\n\n"
+        f"Item: {title}\n"
+        f"Price: ${price}\n"
+        f"Platform: {platform}\n"
+        f"Outfit: {outfit}\n\n"
+        "Write a 2–4 sentence caption. Rules:\n"
+        "- First person, casual tone (like a real post, not an ad)\n"
+        "- Mention the item name, price, and platform each exactly once, naturally\n"
+        "- Capture the specific outfit vibe — name the feeling or aesthetic\n"
+        "- No hashtags\n"
+        "- Do not start with 'I'"
+    )
+ 
+    client = _get_groq_client()
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=1.1,  
+        max_tokens=150,
+    )
+    return response.choices[0].message.content.strip()
+
