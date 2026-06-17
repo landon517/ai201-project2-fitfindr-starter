@@ -162,7 +162,7 @@ fit_card is None: True
  
 The planning.md spec held up well through implementation with two adjustments:
  
-**Query parsing:** The spec said to parse description, size, and max_price from the user's message but didn't specify how. I implemented this with regex rather than an LLM call — it's faster, cheaper, and deterministic, which matters for a step that runs on every query. The tradeoff is that unusual phrasings (e.g., "no more than thirty dollars") won't be caught, but for the scope of this project the regex covers all realistic inputs.
+**Query parsing:** The spec said to parse description, size, and max_price from the user's message but didn't specify how. I implemented this with regex rather than an LLM call. it's faster, cheaper, and deterministic, which matters for a step that runs on every query. The tradeoff is that unusual phrasings (e.g., "no more than thirty dollars") won't be caught, but for the scope of this project the regex covers all realistic inputs.
  
 **`create_fit_card` signature:** The spec listed only `outfit` as a parameter, but the stub in `tools.py` also included `new_item`. Keeping `new_item` made the captions significantly more specific (item name, price, platform appear naturally), so the stub signature was the right call over the spec.
  
@@ -171,7 +171,7 @@ The planning.md spec held up well through implementation with two adjustments:
 ## AI Tool Usage
  
 **Instance 1 — implementing `search_listings`:**
-I gave Claude the Tool 1 block from `planning.md` (the inputs table, return value description, and empty-result failure mode) along with the `load_listings()` function signature from `data_loader.py`. I asked it to implement the function using those helpers. The generated code used `in` substring matching for size and scored by keyword count across title, description, and style tags — matching the spec. I verified that, firstly all three filter parameters were applied, then the empty-result case returned `[]` not `None`, and lastly results were sorted by score. I added the cap of 5 results, which the generated code omitted.
+I gave Claude the Tool 1 block from `planning.md` (the inputs table, return value description, and empty-result failure mode) along with the `load_listings()` function signature from `data_loader.py`. I asked it to implement the function using those helpers. The generated code used `in` substring matching for size and scored by keyword count across title, description, and style tags matching the spec. I verified that, firstly all three filter parameters were applied, then the empty-result case returned `[]` not `None`, and lastly results were sorted by score. I added the cap of 5 results, which the generated code omitted.
  
 **Instance 2 — implementing the planning loop:**
 I gave Claude the Planning Loop section and the architecture and asked it to implement `run_agent()`. The generated code correctly branched on empty search results and stored values in the session dict. I changed the generated code called `suggest_outfit` with a hardcoded empty wardrobe check inside `run_agent()` and passed a modified wardrobe in. I moved that logic back into `suggest_outfit` itself, where the spec said it belonged, so the tool handles its own failure mode rather than the planning loop working around it.
